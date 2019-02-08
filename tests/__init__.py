@@ -15,12 +15,48 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from copy import deepcopy
 from datetime import datetime
 
+from django.db import models
 from django.utils import timezone, dateformat
 
 from djstripe.webhooks import TEST_EVENT_ID
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 FUTURE_DATE = datetime(2100, 4, 30, tzinfo=timezone.utc)
 
+
+class AssertStripeFksMixin:
+    def assert_fks(self, obj, expected_blank_fks, processed_stripe_ids=None):
+        """
+        Recursively walk through fks on obj, asserting they're not-none
+        :param obj:
+        :param expected_blank_fks: fields that are expected to be None
+        :param processed_stripe_ids: set of objects ids already processed
+        :return:
+        """
+
+        if processed_stripe_ids is None:
+            processed_stripe_ids = set()
+
+        processed_stripe_ids.add(obj.id)
+
+        for field in obj._meta.fields:
+            if isinstance(field, models.ForeignKey):
+                field_str = str(field)
+                field_value = getattr(obj, field.name)
+
+                if field_str in expected_blank_fks:
+                    self.assertIsNone(field_value, field)
+                else:
+                    self.assertIsNotNone(field_value, field)
+
+                    if field_value.id not in processed_stripe_ids:
+                        # recurse into the object if it's not already been checked
+                        self.assert_fks(field_value, expected_blank_fks, processed_stripe_ids)
+
+                    logger.warning("checked {}".format(field_str))
 
 def datetime_to_unix(datetime_):
     return int(dateformat.format(datetime_, 'U'))
@@ -543,6 +579,28 @@ FAKE_PLAN_II = {
     "statement_descriptor": None,
     "trial_period_days": 12,
     "usage_type": "licensed",
+}
+
+FAKE_TIER_PLAN = {
+    "id": "tier21323",
+    "object": "plan",
+    "active": True,
+    "amount": None,
+    "created": 1386247539,
+    "currency": "usd",
+    "interval": "month",
+    "interval_count": 1,
+    "livemode": False,
+    "metadata": {},
+    "name": "New plan name",
+    "statement_descriptor": None,
+    "trial_period_days": None,
+    "usage_type": "licensed",
+    "tiers_mode": "graduated",
+    "tiers": [
+        {"flat_amount": 4900, "unit_amount": 1000, "up_to": 5},
+        {"flat_amount": None, "unit_amount": 900, "up_to": None},
+    ],
 }
 
 
